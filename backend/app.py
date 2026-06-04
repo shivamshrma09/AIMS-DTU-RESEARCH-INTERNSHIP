@@ -13,7 +13,6 @@ from pytorch_grad_cam import GradCAM
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from torchvision import transforms
 
-# ── Reproducibility ──────────────────────────────────────────────────────────
 torch.manual_seed(42)
 np.random.seed(42)
 random.seed(42)
@@ -37,9 +36,30 @@ transform = transforms.Compose([
 ])
 
 
+class EfficientNetWrapper(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.base_model = timm.create_model("efficientnet_b0", pretrained=False, num_classes=0)
+        self.classifier = torch.nn.Sequential(
+            torch.nn.Dropout(0.3),       # index 0
+            torch.nn.Linear(1280, 256),  # index 1
+            torch.nn.ReLU(),             # index 2
+            torch.nn.Dropout(0.2),       # index 3
+            torch.nn.Linear(256, 3),     # index 4
+        )
+
+    def forward(self, x):
+        x = self.base_model(x)
+        return self.classifier(x)
+
+    @property
+    def conv_head(self):
+        return self.base_model.conv_head
+
+
 def load_model() -> torch.nn.Module:
-    model = timm.create_model("efficientnet_b0", pretrained=False, num_classes=3)
-    state = torch.load("best_model.pth", map_location=DEVICE)
+    state = torch.load("best_model.pth", map_location=DEVICE, weights_only=False)
+    model = EfficientNetWrapper()
     model.load_state_dict(state)
     model.to(DEVICE)
     model.eval()
@@ -48,9 +68,10 @@ def load_model() -> torch.nn.Module:
 
 try:
     model = load_model()
+    print("Model loaded successfully")
 except Exception as e:
     print(f"Warning: Could not load model weights: {e}")
-    model = timm.create_model("efficientnet_b0", pretrained=False, num_classes=3)
+    model = EfficientNetWrapper()
     model.to(DEVICE)
     model.eval()
 
